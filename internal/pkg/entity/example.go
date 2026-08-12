@@ -10,15 +10,15 @@ import "time"
 //   - `firestore` tags only if you plug in the firestore repository.
 //   - A dedicated *Response struct for paginated list endpoints.
 type Example struct {
+	CreatedAt   time.Time `json:"createdAt" firestore:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt" firestore:"updatedAt"`
 	ID          string    `json:"id" firestore:"-"`
 	Name        string    `json:"name" binding:"required" firestore:"name"`
 	Description string    `json:"description" firestore:"description"`
-	CreatedAt   time.Time `json:"createdAt" firestore:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt" firestore:"updatedAt"`
 }
 
 // ExamplesResponse is the response for the paginated list endpoint.
 type ExamplesResponse struct {
-	TotalItems int        `json:"totalItems"`
 	Items      []*Example `json:"items"`
+	TotalItems int        `json:"totalItems"`
 }

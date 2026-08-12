@@ -1,48 +1,58 @@
-linters-settings:
+linters:
   disable:
     - staticcheck
-    - govet
-    - goanalysis_metalinter
-
-  # Enable analyzers by name. Run `go tool vet help` to see all analyzers.
   enable:
-    - asmdecl
-    - assign
-    - atomic
-    - atomicalign
-    - bools
-    - buildtag
-    - cgocall
-    - composites
-    - copylocks
-    - deepequalerrors
-    - errorsas
-    - fieldalignment
-    - findcall
-    - framepointer
-    - httpresponse
-    - ifaceassert
-    - loopclosure
-    - lostcancel
-    - nilfunc
-    - nilness
-    - nonamedreturns
-    - printf
-    - reflectvaluecompare
-    - shadow
-    - shift
-    - sigchanyzer
-    - sortslice
-    - stdmethods
-    - stringintconv
-    - structtag
-    - testinggoroutine
-    - tests
-    - unmarshal
-    - unreachable
-    - unsafeptr
-    - unusedresult
-    - unusedwrite
+    - govet
+    - errcheck
+    - unused
+    - ineffassign
+    - gosimple
+
+# Per-linter configuration. The block below turns on individual `go vet`
+# analyzers inside the "govet" linter (this must be nested under
+# `linters-settings.govet`, NOT at the top level of `linters-settings` —
+# putting `enable`/`disable` directly under `linters-settings` is invalid
+# against golangci-lint's config schema and fails `golangci-lint config
+# verify` in CI).
+linters-settings:
+  govet:
+    enable:
+      - asmdecl
+      - assign
+      - atomic
+      - atomicalign
+      - bools
+      - buildtag
+      - cgocall
+      - composites
+      - copylocks
+      - deepequalerrors
+      - errorsas
+      - fieldalignment
+      - findcall
+      - framepointer
+      - httpresponse
+      - ifaceassert
+      - loopclosure
+      - lostcancel
+      - nilfunc
+      - nilness
+      - printf
+      - reflectvaluecompare
+      - shadow
+      - shift
+      - sigchanyzer
+      - sortslice
+      - stdmethods
+      - stringintconv
+      - structtag
+      - testinggoroutine
+      - tests
+      - unmarshal
+      - unreachable
+      - unsafeptr
+      - unusedresult
+      - unusedwrite
 
 issues:
   exclude-rules:
@@ -55,7 +65,12 @@ issues:
         - goerr113
         - lll
         - wrapcheck
-        - staticcheck
+    # Table-driven test structs are ordered for readability, not for memory
+    # layout — don't ask table-driven tests to reorder fields for alignment.
+    - path: _test\.go
+      linters:
+        - govet
+      text: "fieldalignment"
     # Mockery-generated code — never hand-edit, never lint.
     - path: mocks/.*\.go
       linters:

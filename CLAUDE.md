@@ -351,6 +351,15 @@ go mod download
   base real. Levanta Postgres localmente o cambia `routes.go` para usar
   `firestore.NewExampleRepository(...)`.
 
+**El workflow `golangci-lint` falla con `jsonschema: "linters-settings" does
+not validate ...`**
+→ `enable`/`disable` van bajo la sección `linters:`, y la lista de
+  analizadores individuales de `go vet` va bajo `linters-settings.govet.enable`
+  — nunca directo bajo `linters-settings`. Corre `golangci-lint config
+  verify` localmente antes de hacer push para detectarlo (instala con
+  `go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8`
+  para usar la misma versión que CI).
+
 ---
 
 ## 📚 Recursos
