@@ -1,0 +1,43 @@
+# Reference deploy workflow — copy into your fork and fill in the TODOs.
+# It builds the Docker image and deploys it to Cloud Run on every GitHub
+# release. See admin-tool-api's workflows for a real-world, EPA-Digital
+# specific version of this file (workload identity provider, secrets, VPC
+# connector, etc.) once you know your project's GCP project id/region.
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    name: Cloud Run Deployment
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "TODO: projects/<number>/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "TODO: <service-account>@<project-id>.iam.gserviceaccount.com"
+          project_id: "TODO: <gcp-project-id>"
+
+      - name: Configure Docker
+        run: gcloud auth configure-docker
+
+      - name: Build
+        run: docker build -t us-central1-docker.pkg.dev/TODO-PROJECT/epa-standards-backend/epa-standards-backend:${{ github.sha }} .
+
+      - name: Push
+        run: docker push us-central1-docker.pkg.dev/TODO-PROJECT/epa-standards-backend/epa-standards-backend:${{ github.sha }}
+
+      - name: Deploy
+        run: |
+          gcloud run deploy epa-standards-backend \
+            --region us-central1 \
+            --image us-central1-docker.pkg.dev/TODO-PROJECT/epa-standards-backend/epa-standards-backend:${{ github.sha }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --project TODO-PROJECT

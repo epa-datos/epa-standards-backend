@@ -1,195 +1,148 @@
-# EPA Digital - Standard Backend API
+# EPA Digital — Standard Backend API (Go)
 
-Template de API Go con arquitectura hexagonal, lista para clonar y empezar a desarrollar.
+Plantilla estándar de API en Go para EPA Digital. Está construida con la
+**misma estructura de carpetas que [admin-tool-api](https://github.com/epa-datos/admin-tool-api)**,
+pero con la lógica de negocio reemplazada por un recurso de ejemplo genérico
+(`Example`) para que sirva como punto de partida limpio.
 
-**Usa este repo como punto de partida para cualquier API Go en EPA Digital.**
+**Este repo está pensado para hacer `fork` / `copy` y empezar un proyecto nuevo.**
+No contiene lógica de negocio real de ningún cliente ni credenciales — todo lo
+sensible se reemplazó por placeholders.
 
-## 🚀 Quick Start
+## 🚀 Quick start
 
 ```bash
-# 1. Clone
-git clone https://github.com/epadigital/epa-standards-backend.git my-api
-cd my-api
+# 1. Clona (o haz fork) y renombra el módulo si vas a publicarlo con otro nombre
+git clone https://github.com/epa-datos/epa-standards-backend.git mi-nueva-api
+cd mi-nueva-api
 
-# 2. Setup
+# 2. Copia las variables de entorno
 cp .env.example .env
+
+# 3. Descarga dependencias
 go mod download
 
-# 3. Run
-go run ./cmd/api
+# 4. Corre el servidor
+go run .
+# Deberías ver: "Server running on :8080"
 
-# 4. Test
-go test ./...
-
-# 5. Read CLAUDE.md
-cat CLAUDE.md  # ← Leelo completamente
+# 5. Prueba el endpoint de ejemplo
+curl http://localhost:8080/health
+curl http://localhost:8080/api/v1/examples
 ```
+
+> El endpoint de ejemplo usa Postgres por defecto (`internal/infrastructure/api/routes.go`).
+> Si no tienes Postgres corriendo localmente, el servidor arranca pero las
+> rutas de `/api/v1/examples` fallarán al conectar — es esperado, es solo un
+> ejemplo. Ver [docs/VARIABLES-ENTORNO.md](docs/VARIABLES-ENTORNO.md).
 
 ## 📚 Documentación
 
-**Antes de empezar, lee:**
-- **[CLAUDE.md](./CLAUDE.md)** - Guía completa de arquitectura y desarrollo
-- **[CONTRIBUTING.md](../epa-standards/CONTRIBUTING.md)** - Cómo contribuir
-- **[BRANCHING-STRATEGY.md](../epa-standards/docs/BRANCHING-STRATEGY.md)** - Git workflow
+| Documento | Contenido |
+|---|---|
+| [CLAUDE.md](./CLAUDE.md) | Guía completa de arquitectura, convenciones y cómo agregar un recurso nuevo |
+| [docs/ESTRUCTURA.md](docs/ESTRUCTURA.md) | Qué hay en cada carpeta y por qué |
+| [docs/MOCKS.md](docs/MOCKS.md) | Cómo generar/regenerar mocks con **mockery** |
+| [docs/TESTING.md](docs/TESTING.md) | Cómo escribir y correr pruebas unitarias |
+| [docs/VARIABLES-ENTORNO.md](docs/VARIABLES-ENTORNO.md) | Variables de entorno, Viper, `.env` vs entorno real |
 
-## 📁 Estructura
+## 📁 Estructura (resumen)
 
 ```
-cmd/api/                    # Entry point
-internal/
-  ├── domain/              # Business logic (entities, interfaces)
-  ├── usecases/            # Orchestration (application logic)
-  └── adapters/            # HTTP handlers, DB, external services
-pkg/                        # Shared utilities
-docs/                       # OpenAPI, diagramas
-.github/workflows/          # CI/CD
+├── main.go                                  # Entry point
+├── go.mod / go.sum
+├── Dockerfile
+├── Makefile                                 # run, test, lint, mocks, docker-*
+├── .golangci.yml
+├── .mockery.yaml                            # Config de mockery
+├── .env.example
+├── .github/workflows/                       # CI: tests, lint, deploy
+├── docs/                                    # Documentación detallada
+├── mocks/                                   # Mocks generados por mockery (NO editar a mano)
+└── internal/
+    ├── infrastructure/
+    │   ├── api/
+    │   │   ├── server.go                    # gin.Engine, middlewares globales, Run()
+    │   │   ├── routes.go                    # DI + montaje de cada recurso
+    │   │   ├── middlewares/                 # auth, cors, etc.
+    │   │   └── example/                     # 👉 Vertical slice de ejemplo (handlers + routes + tests)
+    │   └── repositories/
+    │       ├── postgres/                    # 👉 Implementación de ExampleRepository con GORM
+    │       └── firestore/                   # 👉 Implementación de ExampleRepository con Firestore
+    └── pkg/
+        ├── config/                          # Viper: carga variables de entorno
+        ├── entity/                          # Structs de dominio (Example, ...)
+        ├── ports/                           # Interfaces (contratos) — lo que se mockea
+        ├── service/example/                 # Lógica de negocio + tests
+        └── utils/                           # Helpers compartidos (paginación, ...)
 ```
 
-## 🔍 Qué Hay Dentro
+Ver el detalle completo en [docs/ESTRUCTURA.md](docs/ESTRUCTURA.md).
 
-### Ejemplos Funcionales
+## 🧱 Cómo agregar un recurso nuevo
 
-1. **Domain Layer** (`internal/domain/user.go`)
-   - Entity: `User`
-   - Interface: `UserRepository`
-   - Errores: `ErrUserNotFound`, etc.
+El patrón completo está implementado para `example` — cópialo:
 
-2. **Usecases** (`internal/usecases/`)
-   - `CreateUserUsecase` - crear usuario con validación
-   - `GetUserUsecase` - obtener usuario
-   - Tests incluidos
+1. **Entity** → `internal/pkg/entity/mi_recurso.go`
+2. **Ports** (interfaces repo + service) → `internal/pkg/ports/mi_recurso.go`
+3. **Service** (lógica de negocio) → `internal/pkg/service/mi_recurso/service.go` + `service_test.go`
+4. **Repository** (Postgres o Firestore) → `internal/infrastructure/repositories/<engine>/mi_recurso_repository.go`
+5. **Handlers + routes** → `internal/infrastructure/api/mi_recurso/{handlers,routes}.go` + `handlers_test.go`
+6. **Wire todo** en `internal/infrastructure/api/routes.go`
+7. **Genera los mocks**: agrega las interfaces nuevas a `.mockery.yaml` y corre `make mocks`
+8. **Corre los tests**: `make test`
 
-3. **Adapters** (`internal/adapters/`)
-   - `UserHandler` - HTTP endpoints
-   - `UserRepository` - In-memory storage (pruebas) → reemplaza con DB real
-   - Middleware - logging, CORS, recovery
+Ver el paso a paso con código en [CLAUDE.md](./CLAUDE.md#-cómo-agregar-un-recurso-nuevo).
 
-4. **Utilities** (`pkg/`)
-   - Logger simple
-   - (Agrega validators, helpers, etc.)
-
-### Configuración
-
-- `go.mod` / `go.sum` - Dependencias (mínimas)
-- `Dockerfile` - Multi-stage para producción
-- `.env.example` - Variables de entorno
-- `.gitignore` - Excluye archivos locales
-
-### CI/CD (Próximamente)
-
-- `.github/workflows/test.yml` - Tests en PR
-- `.github/workflows/deploy.yml` - Deploy en releases
-
-## 🛠️ Desarrollo
-
-### Agregar un Nuevo Endpoint
-
-Sigue el patrón de `user`:
-
-1. **Crea entity en `domain/`**
-   ```go
-   // internal/domain/product.go
-   type Product struct { ... }
-   type ProductRepository interface { ... }
-   ```
-
-2. **Crea usecase en `usecases/`**
-   ```go
-   // internal/usecases/create_product.go
-   type CreateProductUsecase struct { ... }
-   func (uc *CreateProductUsecase) Execute(...) { ... }
-   ```
-
-3. **Crea handler en `adapters/http/handlers/`**
-   ```go
-   // internal/adapters/http/handlers/product_handler.go
-   type ProductHandler struct { ... }
-   func (h *ProductHandler) CreateProduct(w, r) { ... }
-   ```
-
-4. **Crea repository en `adapters/persistence/`**
-   ```go
-   // internal/adapters/persistence/product_repository.go
-   type ProductRepository struct { ... }
-   func (r *ProductRepository) Save(...) { ... }
-   ```
-
-5. **Registra en `main.go`**
-   ```go
-   productRepo := persistence.NewProductRepository(log)
-   createProductUC := usecases.NewCreateProductUsecase(productRepo)
-   productHandler := handlers.NewProductHandler(createProductUC, log)
-   mux.HandleFunc("POST /api/v1/products", productHandler.CreateProduct)
-   ```
-
-6. **Agrega tests**
-   ```go
-   // internal/usecases/create_product_test.go
-   func TestCreateProduct(t *testing.T) { ... }
-   ```
-
-### Tests
+## 🧪 Comandos comunes
 
 ```bash
-# Todos
-go test ./...
-
-# Con cobertura
-go test ./... -cover
-
-# Específico
-go test -run TestCreateUser ./internal/usecases
+make run             # go run .
+make test            # go test ./... -v
+make test-cover      # go test ./... -cover
+make lint            # golangci-lint run
+make mocks           # regenera mocks/ con mockery
+make build           # compila el binario
+make docker-build    # docker build
+make docker-run      # docker run --env-file .env
 ```
 
-### Docker
+## 🔐 Seguridad
 
-```bash
-# Build
-docker build -t my-api:latest .
+- **Nunca** commitees `.env` (está en `.gitignore`) ni archivos de credenciales
+  (`*-service-account.json`, `*.pem`, `*.key`).
+- `.env.example` solo contiene placeholders, nunca valores reales.
+- El middleware `internal/infrastructure/api/middlewares/auth.go` es un
+  placeholder mínimo — reemplázalo por tu proveedor real (Firebase, Auth0,
+  JWT, API Gateway, ...) antes de ir a producción.
 
-# Run
-docker run -p 8080:8080 -e LOG_LEVEL=info my-api:latest
+## 🔄 Git workflow
+
+Mismo flujo que el resto de repos de EPA Digital:
+
+```
+feature/nombre-feature
+fix/nombre-del-bug
+refactor/algo
 ```
 
-## 🔄 Git Workflow
+1. Crea rama desde `staging`
+2. Commits: `feat: ...`, `fix: ...`, `test: ...`, `docs: ...`
+3. Abre PR a `staging`, espera CI (tests + lint) y 1 aprobación
+4. Merge
 
-1. Crea rama: `feature/new-feature`
-2. Commit: `git commit -m "feat: add new feature"`
-3. Push y abre PR a `staging`
-4. Tests corren automáticamente
-5. Merge después de aprobación
+## 📄 Estado de este template
 
-Ver [BRANCHING-STRATEGY.md](../epa-standards/docs/BRANCHING-STRATEGY.md) para detalles.
-
-## 📝 Próximos Pasos
-
-1. ✅ Lee `CLAUDE.md`
-2. ✅ Run `go run ./cmd/api`
-3. ✅ Revisa `internal/domain/user.go` (entity de ejemplo)
-4. ✅ Revisa `internal/usecases/create_user.go` (usecase de ejemplo)
-5. ✅ Revisa `internal/adapters/http/handlers/user_handler.go` (handler de ejemplo)
-6. ✅ Crea tu primer endpoint copiando el patrón de `user`
-7. ✅ Escribe tests
-8. ✅ Abre PR a `staging`
-
-## 📞 Preguntas?
-
-- Lee `CLAUDE.md` (contiene respuestas a Q&A comunes)
-- Revisa archivos de ejemplo en `internal/`
-- Pregunta en Slack/equipo
-
-## 📄 Estado
-
-- ✅ Architecture: Hexagonal
-- ✅ Examples: Users (CRUD)
-- ✅ Tests: Included
-- ✅ Docker: Configured
-- ⏳ Database: TODO (reemplaza in-memory repo)
-- ⏳ OpenAPI: TODO (instala swag)
-- ⏳ GitHub Workflows: TODO (configura en tu repo)
+- ✅ Estructura idéntica a `admin-tool-api` (hexagonal-ish: api / repositories / pkg)
+- ✅ Recurso de ejemplo end-to-end (`Example`): entity → ports → service → repo (Postgres y Firestore) → handlers → routes
+- ✅ Mocks generados con `mockery` (`.mockery.yaml` + `mocks/`)
+- ✅ Pruebas unitarias de servicio y de handler usando los mocks
+- ✅ Viper + variables de entorno (`.env.example`, `internal/pkg/config`)
+- ✅ Docker multi-stage + GitHub Actions (tests, lint, deploy de referencia)
+- ⏳ Reemplaza `Example` por tu dominio real
+- ⏳ Reemplaza el middleware de auth por uno real
+- ⏳ Completa los `TODO` de `.github/workflows/cloudrun_deploy.yml` con tu proyecto GCP
 
 ---
 
-**Última actualización:** 2026-05-20
-
-**¡Buena suerte con tu API!** 🚀
+**Última actualización:** 2026-08-11

@@ -1,0 +1,13 @@
+# Mockery v2 configuration. Run `mockery` (or `make mocks`) from the repo
+# root to (re)generate every mock under mocks/. See docs/MOCKS.md.
+with-expecter: false
+mockname: "{{.InterfaceName}}"
+filename: "{{.InterfaceName}}.go"
+outpkg: mocks
+dir: mocks
+
+packages:
+  github.com/epa-datos/epa-standards-backend/internal/pkg/ports:
+    interfaces:
+      ExampleRepository:
+      ExampleService:

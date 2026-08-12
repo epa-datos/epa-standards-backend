@@ -1,544 +1,378 @@
-# CLAUDE.md - EPA Digital Standard Backend API
+# CLAUDE.md — EPA Digital Standard Backend API
 
-Este es un template estándar de API Go con arquitectura hexagonal. Léelo completamente antes de empezar.
+Este es el template estándar de API Go de EPA Digital. Tiene la **misma
+estructura de carpetas que `admin-tool-api`**, con la lógica de negocio real
+reemplazada por un recurso de ejemplo (`Example`) de punta a punta. Léelo
+completo antes de empezar a desarrollar.
 
-## 🚀 Comienza Aquí (5 min)
+## 🚀 Comienza aquí (5 min)
 
 ```bash
-# 1. Descarga dependencias
-go mod download
-
-# 2. Copia variables de entorno
+# 1. Copia variables de entorno
 cp .env.example .env
 
-# 3. Inicia el servidor
-go run ./cmd/api
+# 2. Descarga dependencias
+go mod download
 
+# 3. Inicia el servidor
+go run .
 # Deberías ver: "Server running on :8080"
-# API disponible en: http://localhost:8080
+
+# 4. Prueba
+curl http://localhost:8080/health
 ```
 
 ---
 
-## 📋 Comandos Comunes
+## 📋 Comandos comunes
 
 ```bash
 # Desarrollo
-go run ./cmd/api              # Inicia servidor localmente
-go run ./cmd/api/main.go      # Alternativa
+go run .                      # Inicia servidor localmente
+make run                      # Igual, vía Makefile
 
 # Testing
 go test ./...                 # Todos los tests
 go test ./... -v              # Tests verbosos
 go test ./... -cover          # Con cobertura
-go test -run TestNombreTest   # Test específico
+go test -run TestNombreTest ./internal/pkg/service/example
+make test / make test-cover
+
+# Mocks (ver docs/MOCKS.md)
+mockery                       # Regenera mocks/ desde internal/pkg/ports
+make mocks
 
 # Linting
-go vet ./...                  # Go vet check
-golangci-lint run             # Linting completo (si tienes instalado)
+go vet ./...
+golangci-lint run
+make lint
 
 # Building
-go build -o api ./cmd/api    # Compilar binario
-make build                    # Si tienes Makefile
+go build -o epa-standards-backend .
+make build
 
 # Docker
-docker build -t api:latest .
-docker run -p 8080:8080 api:latest
-
-# OpenAPI/Swagger
-swag init -g cmd/api/main.go # Generar docs/swagger.json
-# Luego: http://localhost:8080/swagger/index.html
+make docker-build
+make docker-run
 ```
 
 ---
 
-## 🏗️ Arquitectura: Hexagonal (Ports & Adapters)
+## 🏗️ Arquitectura
 
-**Principio:** La lógica de negocio es **independiente** de HTTP, DB, o frameworks.
-
-```
-┌─────────────────────────────────────────┐
-│           HTTP Handlers (Adapters)       │  ← Reciben requests
-├─────────────────────────────────────────┤
-│           Use Cases (Orchestration)      │  ← Orquestan domain + puertos
-├─────────────────────────────────────────┤
-│        Domain (Business Logic)           │  ← Pure Go, sin deps externas
-├─────────────────────────────────────────┤
-│     Repositories & Services (Adapters)   │  ← Implementan interfaces
-├─────────────────────────────────────────┤
-│     External APIs, Database, Caches      │  ← Infraestructura
-└─────────────────────────────────────────┘
-```
-
-**Flujo real: Crear Usuario**
+**Principio:** la lógica de negocio (`internal/pkg`) es independiente de
+HTTP y de la base de datos concreta. Ambos lados solo se conocen a través de
+interfaces (`internal/pkg/ports`).
 
 ```
-1. HTTP POST /api/v1/users {"email": "..."}
-2. Handler → handler.CreateUser() ← HTTP adapter
-3. Handler → usecase.CreateUser(ctx, req) ← Orquestación
-4. Usecase → userService.Validate() ← Domain interface
-5. Usecase → userRepo.Save() ← Adapter interface (se inyecta)
-6. Repository → database.Insert() ← Infraestructura
-7. Response fluye de vuelta con 201 Created
+┌──────────────────────────────────────────────┐
+│  internal/infrastructure/api/<recurso>        │  ← Handlers gin (HTTP)
+├──────────────────────────────────────────────┤
+│  internal/pkg/service/<recurso>               │  ← Lógica de negocio
+├──────────────────────────────────────────────┤
+│  internal/pkg/ports                           │  ← Interfaces (el contrato)
+├──────────────────────────────────────────────┤
+│  internal/infrastructure/repositories/<engine> │  ← Postgres / Firestore
+└──────────────────────────────────────────────┘
 ```
 
-### Estructura de Directorios
+**Flujo real: crear un Example**
 
 ```
-cmd/api/
-├── main.go              # Entry point, dependency injection
-└── config.go            # Configuration loading (optional)
+1. HTTP POST /api/v1/examples {"name": "..."}
+2. example.Handler.Create()              ← capa HTTP (internal/infrastructure/api/example)
+3. exampleSvc.service.Create()           ← lógica de negocio (internal/pkg/service/example)
+4. Valida el nombre (regla de negocio)
+5. postgres.ExampleRepository.Create()   ← implementación concreta (inyectada por interfaz)
+6. Respuesta 201 con el Example creado
+```
 
+### Estructura de directorios
+
+Ver el detalle completo, con la explicación de cada carpeta, en
+[docs/ESTRUCTURA.md](docs/ESTRUCTURA.md). Resumen:
+
+```
 internal/
-├── domain/              # 🔴 SIN dependencias externas
-│   ├── entities.go      # User, Product, etc. (tipos puros)
-│   ├── errors.go        # DomainError, código de error
-│   └── interfaces.go    # Interfaces que adapters implementan
-│                         # ej: UserRepository, EmailService
-│
-├── usecases/            # 🟡 Orquestación de lógica
-│   ├── create_user.go   # CreateUserUsecase
-│   ├── get_user.go
-│   └── delete_user.go
-│
-└── adapters/            # 🔵 Implementaciones de infraestructura
-    ├── http/
-    │   ├── handlers/
-    │   │   ├── user_handler.go    # HTTP handlers
-    │   │   └── product_handler.go
-    │   ├── middleware/
-    │   │   ├── auth.go
-    │   │   ├── cors.go
-    │   │   └── error_handler.go
-    │   ├── router.go              # Routes registration
-    │   └── response.go            # Response helpers
-    │
-    ├── persistence/
-    │   ├── user_repository.go     # Implementa domain.UserRepository
-    │   └── product_repository.go
-    │
-    └── external/
-        ├── email_service.go       # Implementa domain.EmailService
-        └── payment_service.go
-
-pkg/                    # Utilidades compartidas
-├── logger/             # Logger utilities
-├── errors/             # Error types
-├── validator/          # Validation helpers
-└── middleware/         # Shared middleware
-
-docs/
-├── swagger.json        # ⚠️ AUTO-GENERADO (no editar)
-└── api_design.md       # Notas de diseño
-
-.github/workflows/
-├── test.yml            # Run tests on PR
-├── openapi-sync.yml    # Sync to Postman
-└── deploy.yml          # Deploy to Cloud Run
+├── infrastructure/
+│   ├── api/
+│   │   ├── server.go        # gin.Engine + Run()
+│   │   ├── routes.go        # DI: repo → service → handler → rutas
+│   │   ├── middlewares/     # auth.go (placeholder — reemplázalo)
+│   │   └── example/         # handlers.go, routes.go, handlers_test.go
+│   └── repositories/
+│       ├── postgres/        # client.go (conexión GORM) + example_repository.go
+│       └── firestore/       # client.go (conexión Firestore) + example_repository.go
+└── pkg/
+    ├── config/               # Viper — ver docs/VARIABLES-ENTORNO.md
+    ├── entity/               # Example, ExamplesResponse
+    ├── ports/                # ExampleRepository, ExampleService (interfaces)
+    ├── service/example/      # Lógica de negocio + service_test.go
+    └── utils/                # pagination.go
+mocks/                        # Generado por mockery — ver docs/MOCKS.md
 ```
 
-### Reglas de Oro
+### Reglas de oro
 
 **✅ DO:**
-- Domain depende solo de Go estándar
-- Handlers inyectan dependencias (usecase)
-- Usecases inyectan dependencias (repositories, servicios)
-- Repositories implementan interfaces del domain
+- `pkg/service/<recurso>` depende de `ports.<Recurso>Repository` (interfaz),
+  nunca de `gorm.DB` o `firestore.Client` directamente.
+- Los handlers HTTP dependen de `ports.<Recurso>Service` (interfaz).
+- Cada repositorio concreto (`postgres/`, `firestore/`) implementa la misma
+  interfaz de `ports/` — son intercambiables (ver `routes.go`).
+- Todo error de negocio se declara como sentinel error (`var ErrX = errors.New(...)`)
+  en el paquete del servicio, y el handler lo traduce a un status HTTP en
+  `handleServiceError`.
 
 **❌ DON'T:**
-- Handler llama directo a DB (incorrecto: Handler → Database)
-- Domain importa adapters (imports circulares)
-- Usecase conoce detalles HTTP (status codes, headers)
+- Un handler no debe llamar directo a la base de datos (Handler → DB).
+- `internal/pkg/entity` no debe importar nada de `internal/infrastructure`.
+- Un servicio no debe conocer detalles HTTP (status codes, headers, gin.Context).
 
 ---
 
-## 🔌 Handlers & HTTP
+## 🔌 Handlers & HTTP (gin)
 
-### Handler Pattern
-
-```go
-// internal/adapters/http/handlers/user_handler.go
-
-// UserHandler contiene dependencias inyectadas
-type UserHandler struct {
-    createUserUsecase *usecases.CreateUserUsecase
-    getUserUsecase    *usecases.GetUserUsecase
-    logger            *log.Logger
-}
-
-// Constructor
-func NewUserHandler(
-    createUserUC *usecases.CreateUserUsecase,
-    getUserUC *usecases.GetUserUsecase,
-    logger *log.Logger,
-) *UserHandler {
-    return &UserHandler{
-        createUserUsecase: createUserUC,
-        getUserUsecase:    getUserUC,
-        logger:            logger,
-    }
-}
-
-// POST /api/v1/users
-// @Summary Create a new user
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param request body CreateUserRequest true "User data"
-// @Success 201 {object} UserResponse
-// @Failure 400 {object} ErrorResponse
-// @Router /api/v1/users [post]
-func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
-    // 1. Parse request
-    var req CreateUserRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-        h.respondWithError(w, http.StatusBadRequest, "Invalid request body")
-        return
-    }
-    
-    // 2. Call usecase (no lógica aquí, solo delegation)
-    user, err := h.createUserUsecase.Execute(r.Context(), req)
-    if err != nil {
-        // 3. Handle domain errors
-        h.handleError(w, err)
-        return
-    }
-    
-    // 4. Return response
-    h.respondWithJSON(w, http.StatusCreated, user)
-}
-
-// Helper para respuestas
-func (h *UserHandler) respondWithJSON(w http.ResponseWriter, code int, data interface{}) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(code)
-    json.NewEncoder(w).Encode(data)
-}
-
-func (h *UserHandler) respondWithError(w http.ResponseWriter, code int, msg string) {
-    h.respondWithJSON(w, code, map[string]string{"error": msg})
-}
-```
-
-### OpenAPI Comments (IMPORTANTE)
-
-Cada handler debe tener comentarios OpenAPI. Ejemplo:
+### Patrón de handler
 
 ```go
-// GET /api/v1/users/{id}
-// @Summary Get user by ID
-// @Tags users
-// @Accept json
-// @Produce json
-// @Param id path string true "User ID"
-// @Success 200 {object} UserResponse
-// @Failure 404 {object} ErrorResponse "User not found"
-// @Router /api/v1/users/{id} [get]
-func (h *UserHandler) GetUser(w http.ResponseWriter, r *http.Request) {
-    // ...
+// internal/infrastructure/api/example/handlers.go
+
+type Handler struct {
+    svc ports.ExampleService // interfaz, no la implementación concreta
+}
+
+func NewHandler(svc ports.ExampleService) *Handler {
+    return &Handler{svc: svc}
+}
+
+func (h *Handler) Create(c *gin.Context) {
+    var req entity.Example
+    if err := c.ShouldBindJSON(&req); err != nil {
+        c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+        return
+    }
+
+    if err := h.svc.Create(c.Request.Context(), &req); err != nil {
+        h.handleServiceError(c, err) // traduce sentinel errors → status HTTP
+        return
+    }
+
+    c.JSON(http.StatusCreated, req)
 }
 ```
 
-**Después de agregar/cambiar handlers:**
-```bash
-swag init -g cmd/api/main.go
-git add docs/swagger.json
+### Registrar rutas
+
+```go
+// internal/infrastructure/api/example/routes.go
+func RegisterRoutes(rg *gin.RouterGroup, h *Handler) {
+    rg.GET("", h.List)
+    rg.GET("/:id", h.GetByID)
+    rg.POST("", h.Create)
+    rg.PUT("/:id", h.Update)
+    rg.DELETE("/:id", h.Delete)
+}
 ```
+
+```go
+// internal/infrastructure/api/routes.go — un bloque de 3 líneas por recurso
+exampleRepo := postgres.NewExampleRepository(postgres.NewClient())
+exampleService := exampleSvc.NewService(exampleRepo)
+exampleHandler := exampleAPI.NewHandler(exampleService)
+exampleAPI.RegisterRoutes(v1.Group("/examples"), exampleHandler)
+```
+
+---
+
+## 🧱 Cómo agregar un recurso nuevo
+
+Copia el patrón de `example` reemplazando el nombre por el de tu dominio
+(`Invoice`, `Client`, `Campaign`, ...):
+
+1. **Entity** — `internal/pkg/entity/invoice.go`
+   ```go
+   type Invoice struct {
+       ID     string `json:"id"`
+       Amount int    `json:"amount"`
+   }
+   ```
+
+2. **Ports** — `internal/pkg/ports/invoice.go`
+   ```go
+   type InvoiceRepository interface {
+       GetByID(ctx context.Context, id string) (*entity.Invoice, error)
+       Create(ctx context.Context, invoice *entity.Invoice) error
+       // ...
+   }
+   type InvoiceService interface {
+       GetByID(ctx context.Context, id string) (*entity.Invoice, error)
+       Create(ctx context.Context, invoice *entity.Invoice) error
+       // ...
+   }
+   ```
+
+3. **Service** — `internal/pkg/service/invoice/service.go` (+ `service_test.go`
+   copiando `internal/pkg/service/example/service_test.go`)
+
+4. **Repository** — `internal/infrastructure/repositories/postgres/invoice_repository.go`
+   (o `firestore/`), implementando `ports.InvoiceRepository`
+
+5. **Handlers + routes** — `internal/infrastructure/api/invoice/{handlers,routes}.go`
+   (+ `handlers_test.go` copiando el de `example`)
+
+6. **Wire** en `internal/infrastructure/api/routes.go`:
+   ```go
+   invoiceRepo := postgres.NewInvoiceRepository(postgres.NewClient())
+   invoiceService := invoiceSvc.NewService(invoiceRepo)
+   invoiceHandler := invoiceAPI.NewHandler(invoiceService)
+   invoiceAPI.RegisterRoutes(v1.Group("/invoices"), invoiceHandler)
+   ```
+
+7. **Mocks** — agrega `InvoiceRepository`/`InvoiceService` a `.mockery.yaml`
+   y corre `make mocks` (ver [docs/MOCKS.md](docs/MOCKS.md))
+
+8. **Tests** — `make test`
 
 ---
 
 ## 🧪 Testing
 
-### Estructura
+Ver [docs/TESTING.md](docs/TESTING.md) para el detalle completo con ejemplos.
+Resumen:
 
-```
-internal/
-├── domain/
-│   └── entities_test.go       # Tests de entities
-├── usecases/
-│   └── create_user_test.go    # Tests de usecase (mocks)
-└── adapters/
-    └── http/
-        └── handlers/
-            └── user_handler_test.go  # Tests de handler
-```
+- **Servicio** (`pkg/service/<recurso>/service_test.go`): mockea
+  `ports.<Recurso>Repository`, prueba solo lógica de negocio.
+- **Handler** (`infrastructure/api/<recurso>/handlers_test.go`): mockea
+  `ports.<Recurso>Service`, prueba solo la traducción HTTP ↔ servicio, con
+  `httptest`.
 
-### Ejemplo: Test de Usecase
+### Coverage objetivo
+- `pkg/service/*`: >80%
+- `infrastructure/api/*` (handlers): >60%
 
-```go
-// internal/usecases/create_user_test.go
+---
 
-func TestCreateUser(t *testing.T) {
-    tests := []struct {
-        name      string
-        req       CreateUserRequest
-        mockRepo  *mockUserRepository
-        wantError bool
-        wantUser  *domain.User
-    }{
-        {
-            name: "valid user creation",
-            req: CreateUserRequest{
-                Email: "user@example.com",
-                Name:  "John Doe",
-            },
-            mockRepo:  &mockUserRepository{},
-            wantError: false,
-            wantUser: &domain.User{
-                Email: "user@example.com",
-                Name:  "John Doe",
-            },
-        },
-        {
-            name: "invalid email",
-            req: CreateUserRequest{
-                Email: "invalid",
-                Name:  "John",
-            },
-            wantError: true,
-        },
-    }
-    
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            usecase := usecases.NewCreateUserUsecase(tt.mockRepo)
-            
-            user, err := usecase.Execute(context.Background(), tt.req)
-            
-            if (err != nil) != tt.wantError {
-                t.Errorf("got error %v, want %v", err != nil, tt.wantError)
-            }
-            
-            if !tt.wantError && user.Email != tt.wantUser.Email {
-                t.Errorf("got email %s, want %s", user.Email, tt.wantUser.Email)
-            }
-        })
-    }
-}
+## 🧬 Mocks (mockery)
 
-// Mock para testing
-type mockUserRepository struct {
-    SaveFunc func(ctx context.Context, user *domain.User) error
-}
+Ver [docs/MOCKS.md](docs/MOCKS.md) para el detalle. Resumen:
 
-func (m *mockUserRepository) Save(ctx context.Context, user *domain.User) error {
-    return m.SaveFunc(ctx, user)
-}
+```bash
+go install github.com/vektra/mockery/v2@v2.53.3   # una vez
+mockery                                            # regenerar mocks/
+make mocks                                         # atajo
 ```
 
-### Coverage Target
-- Domain & Usecases: >85%
-- Handlers: >70%
-- (Helpers y test utilities: pueden ser menores)
+Las interfaces a mockear se declaran en `.mockery.yaml`. **Nunca edites a
+mano** los archivos dentro de `mocks/`.
 
 ---
 
 ## 🐳 Docker & Cloud Run
 
-### Dockerfile (Multi-stage)
-
-```dockerfile
-# Build stage
-FROM golang:1.22-alpine AS builder
-WORKDIR /build
-COPY . .
-RUN CGO_ENABLED=0 go build -o api ./cmd/api
-
-# Runtime stage
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates
-WORKDIR /app
-COPY --from=builder /build/api .
-EXPOSE 8080
-HEALTHCHECK --interval=30s CMD wget --quiet --tries=1 --spider http://localhost:8080/health || exit 1
-CMD ["./api"]
-```
-
-### Deploy a Cloud Run
-
 ```bash
-# Build locally
-docker build -t gcr.io/PROJECT/api:latest .
+# Build local
+make docker-build
 
-# Push
-docker push gcr.io/PROJECT/api:latest
+# Run local
+make docker-run   # usa --env-file .env
 
-# Deploy
-gcloud run deploy api \
-  --image gcr.io/PROJECT/api:latest \
-  --region us-central1 \
-  --set-env-vars GCP_PROJECT_ID=PROJECT \
-  --allow-unauthenticated
+# Deploy: ver .github/workflows/cloudrun_deploy.yml (tiene TODOs a completar
+# con tu proyecto de GCP — está basado en el workflow real de admin-tool-api)
 ```
 
-GitHub Actions hace esto automáticamente en releases.
-
 ---
 
-## 📝 Ejemplos en Este Repo
+## 🔐 Variables de entorno
 
-- `internal/domain/user.go` - Entity de ejemplo
-- `internal/usecases/create_user.go` - Usecase de ejemplo
-- `internal/adapters/http/handlers/user_handler.go` - Handler de ejemplo
-- `internal/adapters/persistence/user_repository.go` - Repository de ejemplo
-- `cmd/api/main.go` - Dependency injection setup
-
-**Cómo usar:** Copia estos archivos como plantilla para tus propias features.
-
----
-
-## 🔐 Variables de Entorno
-
-Copia `.env.example` a `.env`:
+Ver [docs/VARIABLES-ENTORNO.md](docs/VARIABLES-ENTORNO.md) para el detalle
+de Viper, precedencia (`.env` vs entorno real) y cómo agregar una variable
+nueva. Resumen:
 
 ```bash
 cp .env.example .env
 ```
 
-**En `.env`:**
-```env
-PORT=8080
-GCP_PROJECT_ID=your-project-id
-LOG_LEVEL=debug
-# Agrega más según necesites
-```
-
-**Nunca commites `.env`** (está en .gitignore)
-
-En `cmd/api/main.go`:
-```go
-func main() {
-    cfg := config.Load() // Lee de .env
-    log.Printf("Starting server on port %s", cfg.Port)
-    // ...
-}
-```
+**Nunca commitees `.env`** (está en `.gitignore`) ni pongas secretos reales
+en `.env.example`.
 
 ---
 
 ## 🔄 Git Workflow
 
-### Branch Naming
+### Branch naming
 ```
-feature/user-authentication    # Nueva feature
-fix/email-validation-bug       # Bug fix
-refactor/error-handling        # Mejora de código
+feature/nombre-feature
+fix/nombre-del-bug
+refactor/algo
 ```
 
-### PR Process
+### PR process
 1. Crea rama desde `staging`
-2. Haz commit significativos
+2. Haz commits significativos
 3. Push a remote
 4. Abre PR a `staging`
-5. Espera CI (tests, linting)
-6. Get 1 approval
+5. Espera CI (tests + lint, ver `.github/workflows/`)
+6. Consigue 1 aprobación
 7. Merge
 
 ### Commits
 ```bash
-git commit -m "feat: add user authentication endpoint"
-git commit -m "fix: validate email format"
-git commit -m "test: add user creation tests"
-git commit -m "docs: update API spec"
+git commit -m "feat: add invoice endpoint"
+git commit -m "fix: validate invoice amount"
+git commit -m "test: add invoice service tests"
+git commit -m "docs: update API structure"
 ```
 
 ---
 
-## 💡 Errores Comunes & Soluciones
+## 💡 Errores comunes & soluciones
 
-**Error: "module not found"**
+**`module not found` / imports rotos**
 ```bash
 go mod tidy
 go mod download
 ```
 
-**Error: "connection refused" en tests**
-→ Estás intentando usar DB real. Usa mocks en tests.
+**Tests fallan con "connection refused"**
+→ Estás intentando usar una DB real en un test. Usa el mock de
+  `ports.<Recurso>Repository` (ver [docs/MOCKS.md](docs/MOCKS.md)).
 
-**Handler devuelve 500**
-→ Revisa logs. Usa `h.logger.Printf()` para debug.
+**`go mod tidy` falla buscando `.../mocks` como módulo externo**
+→ Corre `make mocks` primero; `go mod tidy` necesita que `mocks/` ya tenga
+  archivos `.go` para reconocerlo como paquete interno.
 
-**OpenAPI spec desactualizado**
-```bash
-swag init -g cmd/api/main.go
-git add docs/swagger.json
-```
+**Handler devuelve 500 en vez del status esperado**
+→ Revisa `handleServiceError` en el handler: cada sentinel error nuevo del
+  servicio necesita su `case errors.Is(err, ...)` ahí.
+
+**El servidor arranca pero `/api/v1/examples` falla**
+→ Es el comportamiento esperado sin Postgres corriendo — el ejemplo usa una
+  base real. Levanta Postgres localmente o cambia `routes.go` para usar
+  `firestore.NewExampleRepository(...)`.
 
 ---
 
 ## 📚 Recursos
 
 - **Go Docs:** https://golang.org/doc/
-- **Hexagonal Architecture:** https://alistair.cockburn.us/hexagonal-architecture/
-- **OpenAPI 3.0:** https://swagger.io/specification/
-- **Cloud Run:** https://cloud.google.com/run/docs
+- **Gin:** https://gin-gonic.com/docs/
+- **GORM:** https://gorm.io/docs/
+- **Mockery:** https://vektra.github.io/mockery/latest/
+- **Viper:** https://github.com/spf13/viper
+- **admin-tool-api** (repo del que se tomó esta estructura): https://github.com/epa-datos/admin-tool-api
 
 ---
 
-## 🎯 Siguientes Pasos
+## 🎯 Siguientes pasos
 
-1. ✅ Lee esta guía completa
-2. ✅ Ejecuta `go run ./cmd/api` y verifica que corre
-3. ✅ Revisa los archivos de ejemplo en `internal/`
-4. ✅ Abre `http://localhost:8080/swagger/index.html` (si swag está correctamente configurado)
-5. ✅ Crea tu primer handler copiando `user_handler.go`
-6. ✅ Escribe tests para tu handler
-7. ✅ Haz un PR a `staging`
+1. ✅ Lee esta guía completa y [docs/ESTRUCTURA.md](docs/ESTRUCTURA.md)
+2. ✅ `cp .env.example .env && go run .` y verifica que corre
+3. ✅ Revisa el recurso `example` de punta a punta (entity → ports → service → repo → handler)
+4. ✅ Corre `go test ./... -v` y revisa cómo se usan los mocks
+5. ✅ Copia el patrón de `example` para tu primer recurso real
+6. ✅ Agrega sus mocks (`.mockery.yaml` + `make mocks`) y sus tests
+7. ✅ Borra `example` cuando ya no lo necesites como referencia
+8. ✅ Abre tu primer PR a `staging`
 
----
-
-## 🤖 Skills Disponibles
-
-Estos skills de Claude están disponibles para ayudarte con proyectos Go:
-
-### `go-api-scaffold`
-Crea un nuevo repositorio Go API basado en esta plantilla estándar.
-
-**Cuándo usar:** Al iniciar un nuevo servicio Go para EPA Digital
-```
-Claude: "Create a new Go API for the billing service"
-```
-
-### `go-client-scaffold`
-Crea una librería cliente Go reutilizable para consumir APIs.
-
-**Cuándo usar:** Necesitas un cliente Go para otro servicio
-```
-Claude: "Create a Go client for the analytics service"
-```
-
-### `generate-openapi`
-Genera o actualiza documentación OpenAPI/Swagger para tu API.
-
-**Cuándo usar:** Después de agregar nuevos handlers
-```
-Claude: "Update OpenAPI docs for my API"
-```
-
-### `validate-pr-format`
-Verifica que tu PR siga los estándares EPA Digital antes de submitear.
-
-**Cuándo usar:** Antes de abrir un PR
-```
-Claude: "Validate my PR format"
-```
-
-### `git-flow-guide`
-Guía interactiva para branching strategy y workflow de EPA Digital.
-
-**Cuándo usar:** Duda sobre qué rama crear
-```
-Claude: "What branch should I create for a feature?"
-```
-
----
-
-## ❓ ¿Preguntas?
-
-- Revisa ejemplos en `internal/`
-- Revisa tests en `*_test.go`
-- Lee comentarios en el código
-- Usa los skills disponibles (ver arriba)
-- Pregunta en el equipo
-
-**Buena suerte!** 🚀
+**¡Buena suerte!** 🚀

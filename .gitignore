@@ -1,25 +1,33 @@
+# Environment files — NEVER commit real secrets. Only .env.example is tracked.
+.env
+.env.*
+!.env.example
+
+# Service account / credential files
+*-service-account.json
+*credentials*.json
+*.pem
+*.key
+
 # Binaries
-*.o
-*.a
-*.so
-api
+epa-standards-backend
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 
-# Test binaries
+# Test / coverage output
 *.test
-
-# Output of the go coverage tool
 *.out
+coverage.html
 
-# Dependency directories
+# Dependency / build dirs
 vendor/
-
-# Go work files
+dist/
+build/
 go.work
+go.work.sum
 
 # IDE
 .vscode/
@@ -29,17 +37,5 @@ go.work
 *~
 .DS_Store
 
-# Environment
-.env
-.env.local
-
 # Logs
 *.log
-
-# Build output
-dist/
-build/
-
-# Swagger
-docs/swagger.json
-docs/swagger.yaml
